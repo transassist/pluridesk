@@ -303,10 +303,12 @@ export interface Database {
                     created_at: string
                     currency: Database["public"]["Enums"]["currency_code"]
                     date: string | null
+                    due_date: string | null
                     file_url: string | null
                     id: string
                     notes: string | null
                     owner_id: string
+                    paid: boolean
                     supplier_name: string | null
                     supplier_id: string | null
                 }
@@ -316,10 +318,12 @@ export interface Database {
                     created_at?: string
                     currency?: Database["public"]["Enums"]["currency_code"]
                     date?: string | null
+                    due_date?: string | null
                     file_url?: string | null
                     id?: string
                     notes?: string | null
                     owner_id: string
+                    paid?: boolean
                     supplier_name?: string | null
                     supplier_id?: string | null
                 }
@@ -329,10 +333,12 @@ export interface Database {
                     created_at?: string
                     currency?: Database["public"]["Enums"]["currency_code"]
                     date?: string | null
+                    due_date?: string | null
                     file_url?: string | null
                     id?: string
                     notes?: string | null
                     owner_id?: string
+                    paid?: boolean
                     supplier_name?: string | null
                     supplier_id?: string | null
                 }
@@ -888,6 +894,17 @@ export interface Database {
                     supplier_invoice_url: string | null
                     supplier_rate: number | null
                     supplier_total: number | null
+                    service_type: string | null
+                    unit: string | null
+                    quantity: number | null
+                    source_language: string | null
+                    target_language: string | null
+                    start_date: string | null
+                    due_date: string | null
+                    delivery_date: string | null
+                    status: string | null
+                    purchase_order_id: string | null
+                    updated_at: string
                 }
                 Insert: {
                     created_at?: string
@@ -901,6 +918,17 @@ export interface Database {
                     supplier_invoice_url?: string | null
                     supplier_rate?: number | null
                     supplier_total?: number | null
+                    service_type?: string | null
+                    unit?: string | null
+                    quantity?: number | null
+                    source_language?: string | null
+                    target_language?: string | null
+                    start_date?: string | null
+                    due_date?: string | null
+                    delivery_date?: string | null
+                    status?: string | null
+                    purchase_order_id?: string | null
+                    updated_at?: string
                 }
                 Update: {
                     created_at?: string
@@ -914,6 +942,17 @@ export interface Database {
                     supplier_invoice_url?: string | null
                     supplier_rate?: number | null
                     supplier_total?: number | null
+                    service_type?: string | null
+                    unit?: string | null
+                    quantity?: number | null
+                    source_language?: string | null
+                    target_language?: string | null
+                    start_date?: string | null
+                    due_date?: string | null
+                    delivery_date?: string | null
+                    status?: string | null
+                    purchase_order_id?: string | null
+                    updated_at?: string
                 }
                 Relationships: [
                     {
@@ -932,6 +971,12 @@ export interface Database {
                         foreignKeyName: "outsourcing_supplier_id_fkey"
                         columns: ["supplier_id"]
                         referencedRelation: "suppliers"
+                        referencedColumns: ["id"]
+                    },
+                    {
+                        foreignKeyName: "outsourcing_purchase_order_id_fkey"
+                        columns: ["purchase_order_id"]
+                        referencedRelation: "purchase_orders"
                         referencedColumns: ["id"]
                     }
                 ]

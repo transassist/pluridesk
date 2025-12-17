@@ -35,9 +35,9 @@ export function JobsTab({ supplierId }: JobsTabProps) {
 
             const { data, error } = await (supabase
                 .from("outsourcing")
-                .select("*, jobs(id, job_code, title, status, deadline), purchase_orders(id, number)") as any)
+                .select("*, jobs(id, job_code, title, status, due_date), purchase_orders(id, number)")
                 .eq("supplier_id", supplierId)
-                .order("created_at", { ascending: false });
+                .order("created_at", { ascending: false })) as any;
 
             if (error) throw error;
             return data;
@@ -143,17 +143,17 @@ export function JobsTab({ supplierId }: JobsTabProps) {
                                             </span>
                                         </div>
                                     </TableCell>
-                                    <TableCell>{item.service}</TableCell>
+                                    <TableCell>{item.service_type || "-"}</TableCell>
                                     <TableCell>
                                         <Badge variant="outline" className="capitalize">
                                             {item.jobs?.status}
                                         </Badge>
                                     </TableCell>
                                     <TableCell>
-                                        {item.jobs?.deadline ? format(new Date(item.jobs.deadline), "MMM d, yyyy") : "-"}
+                                        {item.jobs?.due_date ? format(new Date(item.jobs.due_date), "MMM d, yyyy") : "-"}
                                     </TableCell>
                                     <TableCell className="text-right font-medium">
-                                        {item.supplier_total?.toFixed(2)} {item.currency}
+                                        {item.supplier_total?.toFixed(2)} {item.supplier_currency}
                                     </TableCell>
                                     <TableCell>
                                         {item.purchase_order_id ? (

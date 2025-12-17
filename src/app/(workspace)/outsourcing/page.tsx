@@ -1,8 +1,9 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { Loader2, RefreshCcw, Search } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Loader2, RefreshCcw, Search, MoreHorizontal, Trash2, CheckCircle, XCircle, Eye } from "lucide-react";
+import Link from "next/link";
 
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import {
@@ -30,8 +31,17 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { OutsourcingFormSheet } from "@/components/outsourcing/outsourcing-form-sheet";
+import { useToast } from "@/components/ui/use-toast";
 import { formatCurrency } from "@/lib/utils";
 import type { Database } from "@/lib/supabase/types";
 
@@ -76,6 +86,8 @@ const fetchSuppliers = async (): Promise<SupplierRecord[]> => {
 export default function OutsourcingPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [paidFilter, setPaidFilter] = useState("all");
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const {
     data: outsourcing = [],
@@ -103,6 +115,46 @@ export default function OutsourcingPage() {
     queryKey: ["suppliers"],
     queryFn: fetchSuppliers,
   });
+
+  // Mutation for toggling paid status
+  const togglePaidMutation = useMutation({
+    mutationFn: async ({ id, paid }: { id: string; paid: boolean }) => {
+      const response = await fetch(`/api/outsourcing?id=${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paid }),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["outsourcing"] });
+      toast({ title: "Updated", description: "Payment status updated successfully" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update payment status" });
+    },
+  });
+
+  // Mutation for deleting record
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      const response = await fetch(`/api/outsourcing?id=${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Failed to delete");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["outsourcing"] });
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      toast({ title: "Deleted", description: "Outsourcing record deleted successfully" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to delete record" });
+    },
+  });
+
 
   const filteredOutsourcing = useMemo(() => {
     return outsourcing.filter((record) => {
@@ -252,9 +304,11 @@ export default function OutsourcingPage() {
                 <TableRow>
                   <TableHead>Job</TableHead>
                   <TableHead>Supplier</TableHead>
+                  <TableHead>Service</TableHead>
                   <TableHead>Rate</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead>Payment</TableHead>
                   <TableHead className="text-right">Total</TableHead>
+                  <TableHead className="w-[70px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -262,21 +316,25 @@ export default function OutsourcingPage() {
                   <TableRow key={record.id}>
                     <TableCell>
                       <div className="flex flex-col">
-                        <span className="font-semibold">
+                        <Link
+                          href={`/jobs/${record.job_id}`}
+                          className="font-semibold hover:underline text-primary"
+                        >
                           {record.jobs?.job_code ?? "—"}
-                        </span>
+                        </Link>
                         <span className="text-sm text-muted-foreground">
                           {record.jobs?.title}
                         </span>
                       </div>
                     </TableCell>
                     <TableCell>{record.suppliers?.name ?? "—"}</TableCell>
+                    <TableCell>{record.service_type ?? "—"}</TableCell>
                     <TableCell>
                       {record.supplier_rate
                         ? formatCurrency(
-                            record.supplier_rate,
-                            record.supplier_currency ?? "USD"
-                          )
+                          record.supplier_rate,
+                          record.supplier_currency ?? "USD"
+                        )
                         : "—"}
                     </TableCell>
                     <TableCell>
@@ -289,6 +347,52 @@ export default function OutsourcingPage() {
                         record.supplier_total ?? 0,
                         record.supplier_currency ?? "USD"
                       )}
+                    </TableCell>
+                    <TableCell>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon" className="h-8 w-8">
+                            <MoreHorizontal className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuLabel>Actions</DropdownMenuLabel>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem asChild>
+                            <Link href={`/jobs/${record.job_id}`}>
+                              <Eye className="mr-2 h-4 w-4" />
+                              View Job
+                            </Link>
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onClick={() => togglePaidMutation.mutate({ id: record.id, paid: !record.paid })}
+                          >
+                            {record.paid ? (
+                              <>
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Mark Unpaid
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle className="mr-2 h-4 w-4" />
+                                Mark Paid
+                              </>
+                            )}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            className="text-destructive"
+                            onClick={() => {
+                              if (confirm("Are you sure you want to delete this outsourcing record?")) {
+                                deleteMutation.mutate(record.id);
+                              }
+                            }}
+                          >
+                            <Trash2 className="mr-2 h-4 w-4" />
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </TableCell>
                   </TableRow>
                 ))}

@@ -1,16 +1,26 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, keepPreviousData } from "@tanstack/react-query";
 import {
   ChevronLeft,
   ChevronRight,
   Loader2,
   RefreshCcw,
   Search,
-
   Paperclip,
+  Trash2,
+  CheckSquare,
+  Square,
+  X,
+  DollarSign,
+  Receipt,
+  Clock,
+  CheckCircle2,
+  AlertCircle,
+  Circle,
 } from "lucide-react";
+import Link from "next/link";
 
 import { WorkspaceShell } from "@/components/layout/workspace-shell";
 import { Button } from "@/components/ui/button";
@@ -38,10 +48,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ExpenseFormSheet } from "@/components/expenses/expense-form-sheet";
 import { ExpensesTableActions } from "@/components/expenses/expenses-table-actions";
+import { useToast } from "@/components/ui/use-toast";
 import { EXPENSE_CATEGORIES } from "@/lib/validators/expenses";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, cn } from "@/lib/utils";
 import type { Database } from "@/lib/supabase/types";
 
 type ExpenseRecord = Database["public"]["Tables"]["expenses"]["Row"];
@@ -56,14 +70,31 @@ type ExpensesResponse = {
   };
 };
 
+// Category badge colors
+const categoryColors: Record<string, string> = {
+  "Outsourcing": "bg-blue-100 text-blue-700 border-blue-200",
+  "Software": "bg-purple-100 text-purple-700 border-purple-200",
+  "Office": "bg-amber-100 text-amber-700 border-amber-200",
+  "Travel": "bg-green-100 text-green-700 border-green-200",
+  "Marketing": "bg-pink-100 text-pink-700 border-pink-200",
+  "Other": "bg-slate-100 text-slate-700 border-slate-200",
+};
+
 export default function ExpensesPage() {
   const [page, setPage] = useState(1);
-  const [limit] = useState(10);
+  const [limit] = useState(15);
   const [searchTerm, setSearchTerm] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [supplierFilter, setSupplierFilter] = useState("all");
+  const [paymentFilter, setPaymentFilter] = useState("all"); // all, unpaid, paid, overdue
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+
+  // Multi-select state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: suppliersData } = useQuery({
     queryKey: ["suppliers"],
@@ -117,23 +148,145 @@ export default function ExpensesPage() {
     placeholderData: keepPreviousData,
   });
 
-  const expenses = data?.expenses ?? [];
+  const allExpenses = data?.expenses ?? [];
   const meta = data?.meta;
 
-  const currencyTotals = useMemo(() => {
-    // Note: This only calculates totals for the CURRENT PAGE.
-    // For accurate global totals, we should fetch them from a separate API endpoint.
-    // For now, we'll keep it as is but be aware of this limitation.
-    // Ideally, the API should return global totals.
-    return expenses.reduce<Record<string, number>>((acc, expense) => {
-      const key = expense.currency ?? "USD";
-      acc[key] = (acc[key] ?? 0) + (expense.amount ?? 0);
-      return acc;
-    }, {});
-  }, [expenses]);
+  // Filter by payment status (client-side until API supports it)
+  const expenses = useMemo(() => {
+    const today = new Date().toISOString().split("T")[0];
+    return allExpenses.filter((e) => {
+      if (paymentFilter === "all") return true;
+      if (paymentFilter === "paid") return e.paid === true;
+      if (paymentFilter === "unpaid") return e.paid !== true;
+      if (paymentFilter === "overdue") {
+        return e.paid !== true && e.due_date && e.due_date < today;
+      }
+      return true;
+    });
+  }, [allExpenses, paymentFilter]);
+
+  // Toggle paid mutation
+  const togglePaidMutation = useMutation({
+    mutationFn: async ({ id, paid }: { id: string; paid: boolean }) => {
+      const response = await fetch(`/api/expenses/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paid }),
+      });
+      if (!response.ok) throw new Error("Failed to update");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      toast({ title: "Payment status updated" });
+    },
+    onError: () => {
+      toast({ variant: "destructive", title: "Error", description: "Failed to update status" });
+    },
+  });
+
+  // Bulk delete mutation
+  const bulkDeleteMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.all(
+        ids.map((id) => fetch(`/api/expenses/${id}`, { method: "DELETE" }))
+      );
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length > 0) {
+        throw new Error(`Failed to delete ${failed.length} expense(s)`);
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      setSelectedIds(new Set());
+      toast({ title: "Deleted", description: `${selectedIds.size} expense(s) deleted` });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    },
+  });
+
+  // Bulk mark as paid mutation
+  const bulkMarkPaidMutation = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.all(
+        ids.map((id) =>
+          fetch(`/api/expenses/${id}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ paid: true }),
+          })
+        )
+      );
+      const failed = results.filter((r) => !r.ok);
+      if (failed.length > 0) throw new Error(`Failed to update ${failed.length} expense(s)`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["expenses"] });
+      setSelectedIds(new Set());
+      toast({ title: "Marked as Paid", description: `${selectedIds.size} expense(s) marked as paid` });
+    },
+    onError: (error: Error) => {
+      toast({ variant: "destructive", title: "Error", description: error.message });
+    },
+  });
+
+  // Selection helpers
+  const isAllSelected = expenses.length > 0 && expenses.every((e) => selectedIds.has(e.id));
+
+  const toggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(expenses.map((e) => e.id)));
+    }
+  };
+
+  const toggleSelect = (id: string) => {
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedIds(newSet);
+  };
+
+  // Calculate summary totals
+  const today = new Date().toISOString().split("T")[0];
+
+  const unpaidTotal = useMemo(() => {
+    return allExpenses
+      .filter((e) => e.paid !== true)
+      .reduce((sum, e) => sum + (e.amount ?? 0), 0);
+  }, [allExpenses]);
+
+  const overdueTotal = useMemo(() => {
+    return allExpenses
+      .filter((e) => e.paid !== true && e.due_date && e.due_date < today)
+      .reduce((sum, e) => sum + (e.amount ?? 0), 0);
+  }, [allExpenses, today]);
+
+  const totalAmount = useMemo(() => {
+    return allExpenses.reduce((sum, e) => sum + (e.amount ?? 0), 0);
+  }, [allExpenses]);
+
+  const selectedTotal = useMemo(() => {
+    return expenses
+      .filter((e) => selectedIds.has(e.id))
+      .reduce((sum, e) => sum + (e.amount ?? 0), 0);
+  }, [expenses, selectedIds]);
+
+  // Check if expense is overdue
+  const isOverdue = (expense: ExpenseRecord) => {
+    return expense.paid !== true && expense.due_date && expense.due_date < today;
+  };
 
   const hasError = isError;
   const errorMessage = (error as Error)?.message ?? null;
+
+  // Get primary currency for display
+  const primaryCurrency = allExpenses[0]?.currency ?? "USD";
 
   return (
     <WorkspaceShell
@@ -154,34 +307,81 @@ export default function ExpensesPage() {
         </div>
       }
     >
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {Object.entries(currencyTotals).map(([currency, amount]) => (
-          <Card key={currency}>
-            <CardHeader className="pb-2">
-              <CardDescription>Total (Current Page)</CardDescription>
-              <CardTitle className="text-3xl">
-                {formatCurrency(amount, currency)}
-              </CardTitle>
-            </CardHeader>
-          </Card>
-        ))}
-        {Object.keys(currencyTotals).length === 0 && (
-          <Card>
-            <CardHeader className="pb-2">
-              <CardDescription>Total expenses</CardDescription>
-              <CardTitle className="text-3xl text-muted-foreground">0</CardTitle>
-            </CardHeader>
-          </Card>
-        )}
+      {/* Payment Status Summary Cards */}
+      <div className="grid gap-4 md:grid-cols-3">
+        <Card
+          className={cn(
+            "cursor-pointer transition-all hover:shadow-md border-l-4",
+            paymentFilter === "unpaid" ? "ring-2 ring-primary border-l-red-500" : "border-l-red-500"
+          )}
+          onClick={() => setPaymentFilter(paymentFilter === "unpaid" ? "all" : "unpaid")}
+        >
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <Clock className="h-3 w-3" />
+              Not Paid
+            </CardDescription>
+            <CardTitle className="text-2xl text-red-600">
+              {formatCurrency(unpaidTotal, primaryCurrency)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card
+          className={cn(
+            "cursor-pointer transition-all hover:shadow-md border-l-4",
+            paymentFilter === "overdue" ? "ring-2 ring-primary border-l-amber-500" : "border-l-amber-500"
+          )}
+          onClick={() => setPaymentFilter(paymentFilter === "overdue" ? "all" : "overdue")}
+        >
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              Overdue
+            </CardDescription>
+            <CardTitle className="text-2xl text-amber-600">
+              {formatCurrency(overdueTotal, primaryCurrency)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
+        <Card className="border-l-4 border-l-emerald-500">
+          <CardHeader className="pb-2">
+            <CardDescription className="flex items-center gap-1">
+              <DollarSign className="h-3 w-3" />
+              Total (This Page)
+            </CardDescription>
+            <CardTitle className="text-2xl text-emerald-600">
+              {formatCurrency(totalAmount, primaryCurrency)}
+            </CardTitle>
+          </CardHeader>
+        </Card>
       </div>
 
+      {/* Payment Status Tabs */}
+      <Tabs value={paymentFilter} onValueChange={(v) => { setPaymentFilter(v); setPage(1); }}>
+        <TabsList>
+          <TabsTrigger value="all" className="gap-2">
+            All
+            <Badge variant="secondary" className="ml-1">{allExpenses.length}</Badge>
+          </TabsTrigger>
+          <TabsTrigger value="unpaid" className="gap-2">
+            <Circle className="h-3 w-3 text-red-500 fill-red-500" />
+            Not Paid
+          </TabsTrigger>
+          <TabsTrigger value="overdue" className="gap-2">
+            <AlertCircle className="h-3 w-3 text-amber-500" />
+            Overdue
+          </TabsTrigger>
+          <TabsTrigger value="paid" className="gap-2">
+            <CheckCircle2 className="h-3 w-3 text-green-500" />
+            Paid
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+
+      {/* Filters */}
       <Card>
-        <CardHeader className="space-y-1">
-          <CardTitle>Filter expenses</CardTitle>
-          <CardDescription>Search and filter your expenses</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex flex-wrap gap-4">
+        <CardContent className="pt-4">
+          <div className="flex flex-wrap gap-3">
             <div className="flex min-w-[200px] flex-1 items-center gap-2 rounded-md border px-3 py-2">
               <Search className="h-4 w-4 text-muted-foreground" />
               <Input
@@ -190,7 +390,7 @@ export default function ExpensesPage() {
                   setSearchTerm(event.target.value);
                   setPage(1);
                 }}
-                placeholder="Search notes..."
+                placeholder="Search notes or supplier..."
                 className="h-8 border-none bg-transparent px-0 shadow-none focus-visible:ring-0"
               />
             </div>
@@ -202,7 +402,7 @@ export default function ExpensesPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Category" />
               </SelectTrigger>
               <SelectContent>
@@ -222,7 +422,7 @@ export default function ExpensesPage() {
                 setPage(1);
               }}
             >
-              <SelectTrigger className="w-[160px]">
+              <SelectTrigger className="w-[150px]">
                 <SelectValue placeholder="Supplier" />
               </SelectTrigger>
               <SelectContent>
@@ -234,11 +434,8 @@ export default function ExpensesPage() {
                 ))}
               </SelectContent>
             </Select>
-          </div>
 
-          <div className="flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">From:</span>
               <Input
                 type="date"
                 value={fromDate}
@@ -246,11 +443,9 @@ export default function ExpensesPage() {
                   setFromDate(e.target.value);
                   setPage(1);
                 }}
-                className="w-auto"
+                className="w-[140px]"
               />
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-sm text-muted-foreground">To:</span>
+              <span className="text-muted-foreground">→</span>
               <Input
                 type="date"
                 value={toDate}
@@ -258,23 +453,24 @@ export default function ExpensesPage() {
                   setToDate(e.target.value);
                   setPage(1);
                 }}
-                className="w-auto"
+                className="w-[140px]"
               />
             </div>
+
             <Button
               variant="ghost"
               size="sm"
               onClick={() => {
                 setCategoryFilter("all");
                 setSupplierFilter("all");
+                setPaymentFilter("all");
                 setSearchTerm("");
                 setFromDate("");
                 setToDate("");
                 setPage(1);
               }}
-              className="ml-auto"
             >
-              Reset Filters
+              Reset
             </Button>
           </div>
         </CardContent>
@@ -287,10 +483,83 @@ export default function ExpensesPage() {
         </Alert>
       )}
 
+      {/* Bulk Action Bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
+          <div className="flex items-center gap-4 rounded-lg border bg-background/95 backdrop-blur shadow-lg px-4 py-3">
+            <div className="flex items-center gap-2">
+              <CheckSquare className="h-5 w-5 text-primary" />
+              <span className="font-medium">{selectedIds.size} selected</span>
+              <Badge variant="secondary" className="ml-2">
+                {formatCurrency(selectedTotal, primaryCurrency)}
+              </Badge>
+            </div>
+            <div className="h-6 w-px bg-border" />
+            <Button
+              variant="default"
+              size="sm"
+              onClick={() => bulkMarkPaidMutation.mutate(Array.from(selectedIds))}
+              disabled={bulkMarkPaidMutation.isPending}
+              className="bg-green-600 hover:bg-green-700"
+            >
+              {bulkMarkPaidMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <CheckCircle2 className="mr-2 h-4 w-4" />
+              )}
+              Mark as Paid
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                if (confirm(`Delete ${selectedIds.size} expense(s)?`)) {
+                  bulkDeleteMutation.mutate(Array.from(selectedIds));
+                }
+              }}
+              disabled={bulkDeleteMutation.isPending}
+            >
+              {bulkDeleteMutation.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="mr-2 h-4 w-4" />
+              )}
+              Delete
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSelectedIds(new Set())}
+            >
+              <X className="mr-1 h-4 w-4" />
+              Clear
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Expenses Table */}
       <Card>
-        <CardHeader>
-          <CardTitle>Expenses ledger</CardTitle>
-          <CardDescription>All recorded expenses with details</CardDescription>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Expenses Ledger</CardTitle>
+              <CardDescription>
+                Showing {expenses.length} of {meta?.total ?? 0} expenses
+              </CardDescription>
+            </div>
+            {expenses.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={toggleSelectAll}
+                className="gap-2"
+              >
+                {isAllSelected ? <CheckSquare className="h-4 w-4" /> : <Square className="h-4 w-4" />}
+                {isAllSelected ? "Deselect All" : "Select All"}
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {isLoading ? (
@@ -298,68 +567,131 @@ export default function ExpensesPage() {
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
           ) : expenses.length === 0 ? (
-            <div className="py-10 text-center text-sm text-muted-foreground">
-              No expenses found. Add one to get started.
+            <div className="py-16 text-center space-y-4">
+              <div className="mx-auto w-12 h-12 rounded-full bg-muted flex items-center justify-center">
+                <Receipt className="h-6 w-6 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="font-medium">No expenses found</p>
+                <p className="text-sm text-muted-foreground">
+                  {paymentFilter !== "all" ? "Try changing the filter or " : ""}Add your first expense to start tracking costs.
+                </p>
+              </div>
             </div>
           ) : (
             <>
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-[50px]">
+                      <Checkbox
+                        checked={isAllSelected}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all"
+                      />
+                    </TableHead>
+                    <TableHead className="w-[50px]">Status</TableHead>
                     <TableHead>Date</TableHead>
                     <TableHead>Category</TableHead>
                     <TableHead>Supplier</TableHead>
                     <TableHead>Notes</TableHead>
+                    <TableHead>Due</TableHead>
                     <TableHead className="text-right">Amount</TableHead>
                     <TableHead className="w-[50px]"></TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
-                  {expenses.map((expense: any) => (
+                  {expenses.map((expense) => (
                     <TableRow
                       key={expense.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => window.location.href = `/expenses/${expense.id}`}
+                      className={cn(
+                        "transition-colors",
+                        selectedIds.has(expense.id) && "bg-primary/5",
+                        isOverdue(expense) && "bg-red-50/50"
+                      )}
                     >
                       <TableCell>
-                        {expense.date ? formatDate(expense.date) : "—"}
+                        <Checkbox
+                          checked={selectedIds.has(expense.id)}
+                          onCheckedChange={() => toggleSelect(expense.id)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-8 w-8"
+                          onClick={() => togglePaidMutation.mutate({ id: expense.id, paid: !expense.paid })}
+                          title={expense.paid ? "Mark as unpaid" : "Mark as paid"}
+                        >
+                          {expense.paid ? (
+                            <CheckCircle2 className="h-5 w-5 text-green-600" />
+                          ) : isOverdue(expense) ? (
+                            <AlertCircle className="h-5 w-5 text-amber-500" />
+                          ) : (
+                            <Circle className="h-5 w-5 text-red-400" />
+                          )}
+                        </Button>
                       </TableCell>
                       <TableCell className="font-medium">
-                        {expense.category}
+                        {expense.date ? formatDate(expense.date) : "—"}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={cn(
+                            "capitalize",
+                            categoryColors[expense.category] || categoryColors["Other"]
+                          )}
+                        >
+                          {expense.category}
+                        </Badge>
                       </TableCell>
                       <TableCell>
                         {expense.supplier_id ? (
-                          <a
+                          <Link
                             href={`/suppliers/${expense.supplier_id}`}
-                            className="text-blue-600 hover:underline"
+                            className="text-primary hover:underline"
                           >
                             {expense.supplier_name || "—"}
-                          </a>
+                          </Link>
                         ) : expense.supplier_name ? (
                           <span>{expense.supplier_name}</span>
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell className="max-w-xs truncate text-sm text-muted-foreground">
-                        {expense.notes || "—"}
+                      <TableCell className="max-w-[200px]">
+                        <p className="truncate text-sm text-muted-foreground">
+                          {expense.notes || "—"}
+                        </p>
+                      </TableCell>
+                      <TableCell>
+                        {expense.due_date ? (
+                          <span className={cn(
+                            "text-sm",
+                            isOverdue(expense) && "text-red-600 font-medium"
+                          )}>
+                            {formatDate(expense.due_date)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <span className="font-semibold">
-                            {formatCurrency(
-                              expense.amount ?? 0,
-                              expense.currency ?? "USD"
-                            )}
+                            {formatCurrency(expense.amount ?? 0, expense.currency ?? "USD")}
                           </span>
                           {expense.file_url && (
                             <a
                               href={expense.file_url}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="text-blue-600 hover:text-blue-800"
+                              className="text-primary hover:text-primary/80"
                               title="View receipt"
+                              onClick={(e) => e.stopPropagation()}
                             >
                               <Paperclip className="h-4 w-4" />
                             </a>
@@ -374,7 +706,8 @@ export default function ExpensesPage() {
                 </TableBody>
               </Table>
 
-              <div className="flex items-center justify-between py-4">
+              {/* Pagination */}
+              <div className="flex items-center justify-between pt-4 border-t mt-4">
                 <div className="text-sm text-muted-foreground">
                   Page {meta?.page} of {meta?.totalPages}
                 </div>
@@ -385,25 +718,19 @@ export default function ExpensesPage() {
                     onClick={() => setPage((p) => Math.max(1, p - 1))}
                     disabled={page === 1 || isLoading}
                   >
-                    <ChevronLeft className="h-4 w-4" />
+                    <ChevronLeft className="h-4 w-4 mr-1" />
                     Previous
                   </Button>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() =>
-                      setPage((p) =>
-                        meta?.totalPages ? Math.min(meta.totalPages, p + 1) : p
-                      )
+                      setPage((p) => meta?.totalPages ? Math.min(meta.totalPages, p + 1) : p)
                     }
-                    disabled={
-                      page === (meta?.totalPages ?? 1) ||
-                      isLoading ||
-                      isPlaceholderData
-                    }
+                    disabled={page === (meta?.totalPages ?? 1) || isLoading || isPlaceholderData}
                   >
                     Next
-                    <ChevronRight className="h-4 w-4" />
+                    <ChevronRight className="h-4 w-4 ml-1" />
                   </Button>
                 </div>
               </div>

@@ -402,7 +402,7 @@ export default function JobDetailPage() {
 
             {/* Outsourcing Tab */}
             <TabsContent value="outsourcing">
-              <OutsourcingTab jobId={job.id} jobCurrency={job.currency} />
+              <OutsourcingTab jobId={job.id} job={job} />
             </TabsContent>
 
             {/* Linked Entities Tab */}
