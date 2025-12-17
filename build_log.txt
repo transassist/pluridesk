@@ -1,0 +1,31 @@
+
+> pluridesk@0.1.0 build
+> next build
+
+   ▲ Next.js 15.1.4
+   - Environments: .env
+
+   Creating an optimized production build ...
+(node:28021) ExperimentalWarning: Type Stripping is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ Compiled successfully
+   Linting and checking validity of types ...
+
+Failed to compile.
+
+./src/app/(workspace)/clients/[clientId]/page.tsx
+34:10  Error: 'Tabs' is defined but never used.  @typescript-eslint/no-unused-vars
+34:16  Error: 'TabsContent' is defined but never used.  @typescript-eslint/no-unused-vars
+34:29  Error: 'TabsList' is defined but never used.  @typescript-eslint/no-unused-vars
+34:39  Error: 'TabsTrigger' is defined but never used.  @typescript-eslint/no-unused-vars
+84:9  Warning: The 'jobs' logical expression could make the dependencies of useMemo Hook (at line 94) change on every render. To fix this, wrap the initialization of 'jobs' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+84:9  Warning: The 'jobs' logical expression could make the dependencies of useMemo Hook (at line 120) change on every render. To fix this, wrap the initialization of 'jobs' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+85:9  Warning: The 'invoices' logical expression could make the dependencies of useMemo Hook (at line 103) change on every render. To fix this, wrap the initialization of 'invoices' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./src/app/(workspace)/expenses/page.tsx
+120:9  Warning: The 'expenses' logical expression could make the dependencies of useMemo Hook (at line 133) change on every render. To fix this, wrap the initialization of 'expenses' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+./src/app/(workspace)/jobs/page.tsx
+180:9  Warning: The 'jobs' logical expression could make the dependencies of useMemo Hook (at line 213) change on every render. To fix this, wrap the initialization of 'jobs' in its own useMemo() Hook.  react-hooks/exhaustive-deps
+
+info  - Need to disable some ESLint rules? Learn more here: https://nextjs.org/docs/app/api-reference/config/eslint#disabling-rules

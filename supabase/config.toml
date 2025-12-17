@@ -1,0 +1,13 @@
+project_id = "rmavktscqxgarjykfazc"
+
+[api]
+port = 54321
+
+[db]
+port = 54322
+shadow_port = 54323
+major_version = 15
+
+[studio]
+port = 54324
+
