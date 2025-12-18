@@ -23,6 +23,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { formatCurrency } from "@/lib/utils";
 import type { Database } from "@/lib/supabase/types";
+import { DashboardPieChart, DashboardBarChart } from "@/components/charts/chart-components";
 
 type JobRecord = Database["public"]["Tables"]["jobs"]["Row"] & {
   clients: { name: string } | null;
@@ -132,12 +133,29 @@ export default function ReportsPage() {
     return Object.values(clientRevenue).sort((a, b) => b.amount - a.amount);
   }, [jobs]);
 
+  const revenueByClientData = useMemo(() => {
+    return revenueByClient.slice(0, 5).map(c => ({ name: c.name, value: c.amount }));
+  }, [revenueByClient]);
+
   // Job status breakdown
-  const jobsByStatus = useMemo(() => {
-    return jobs.reduce<Record<string, number>>((acc, job) => {
-      acc[job.status] = (acc[job.status] ?? 0) + 1;
-      return acc;
-    }, {});
+  const jobsByStatusData = useMemo(() => {
+    return Object.entries(
+      jobs.reduce<Record<string, number>>((acc, job) => {
+        acc[job.status] = (acc[job.status] ?? 0) + 1;
+        return acc;
+      }, {})
+    ).map(([name, value]) => ({ name: name.replace("_", " "), value }));
+  }, [jobs]);
+
+  // Monthly Revenue Data (simplified for demo/MVP)
+  const monthlyRevenueData = useMemo(() => {
+    const monthly: Record<string, number> = {};
+    jobs.forEach(job => {
+      if (!job.created_at) return;
+      const month = new Date(job.created_at).toLocaleString('default', { month: 'short' });
+      monthly[month] = (monthly[month] ?? 0) + (job.total_amount ?? 0);
+    });
+    return Object.entries(monthly).map(([name, value]) => ({ name, value }));
   }, [jobs]);
 
   const isLoading = isJobsLoading || isExpensesLoading || isOutsourcingLoading || isInvoicesLoading;
@@ -161,37 +179,61 @@ export default function ReportsPage() {
         <>
           {/* Revenue Overview */}
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                <CardTitle className="text-sm font-medium">Total Jobs</CardTitle>
-                <Package className="h-4 w-4 text-muted-foreground" />
+            <Card className="overflow-hidden border-none shadow-md hover-lift">
+              <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-blue-500/5 pointer-events-none" />
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
+                <CardTitle className="text-sm font-bold uppercase tracking-wider">Total Jobs</CardTitle>
+                <Package className="h-4 w-4 text-primary" />
               </CardHeader>
-              <CardContent>
-                <div className="text-2xl font-bold">{jobs.length}</div>
-                <p className="text-xs text-muted-foreground">
-                  {jobsByStatus.in_progress || 0} in progress
+              <CardContent className="relative">
+                <div className="text-3xl font-bold text-gradient">{jobs.length}</div>
+                <p className="text-xs text-muted-foreground font-medium">
+                  Active pipeline
                 </p>
               </CardContent>
             </Card>
 
             {Object.entries(revenueByCurrency).slice(0, 3).map(([currency, amount]) => (
-              <Card key={currency}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-sm font-medium">
+              <Card key={currency} className="overflow-hidden border-none shadow-md hover-lift">
+                <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-emerald-500/5 pointer-events-none" />
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
+                  <CardTitle className="text-sm font-bold uppercase tracking-wider">
                     Revenue ({currency})
                   </CardTitle>
-                  <DollarSign className="h-4 w-4 text-muted-foreground" />
+                  <DollarSign className="h-4 w-4 text-emerald-600" />
                 </CardHeader>
-                <CardContent>
-                  <div className="text-2xl font-bold">
+                <CardContent className="relative">
+                  <div className="text-3xl font-bold text-emerald-600">
                     {formatCurrency(amount, currency)}
                   </div>
-                  <p className="text-xs text-muted-foreground">
-                    From {jobs.length} jobs
+                  <p className="text-xs text-muted-foreground font-medium">
+                    Gross earnings
                   </p>
                 </CardContent>
               </Card>
             ))}
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="glass-card border-none shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold">Job Pipeline</CardTitle>
+                <CardDescription>Status breakdown of all projects</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DashboardPieChart data={jobsByStatusData} />
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card border-none shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold">Revenue Trend</CardTitle>
+                <CardDescription>Monthly growth overview</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DashboardBarChart data={monthlyRevenueData} dataKey="value" xKey="name" />
+              </CardContent>
+            </Card>
           </div>
 
           {/* Expenses & Costs */}
@@ -245,72 +287,52 @@ export default function ReportsPage() {
             </Card>
           </div>
 
-          {/* Client Revenue Breakdown */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Top Clients by Revenue</CardTitle>
-              <CardDescription>Ranked by total job value</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {revenueByClient.length > 0 ? (
+          <div className="grid gap-4 md:grid-cols-2">
+            <Card className="glass-card border-none shadow-lg">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold">Top Clients</CardTitle>
+                <CardDescription>Revenue share by client</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <DashboardPieChart data={revenueByClientData} />
+              </CardContent>
+            </Card>
+
+            <Card className="glass-card border-none shadow-lg overflow-hidden">
+              <CardHeader>
+                <CardTitle className="text-lg font-bold">Outstanding Invoices</CardTitle>
+                <CardDescription>Awaiting payment by currency</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
                 <Table>
-                  <TableHeader>
+                  <TableHeader className="bg-muted/50">
                     <TableRow>
-                      <TableHead>Client</TableHead>
-                      <TableHead className="text-right">Revenue</TableHead>
-                      <TableHead className="text-right">% of Total</TableHead>
+                      <TableHead className="pl-6 font-bold">Currency</TableHead>
+                      <TableHead className="text-right pr-6 font-bold">Amount</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {revenueByClient.slice(0, 10).map((client) => {
-                      const totalRevenue = Object.values(revenueByCurrency).reduce(
-                        (sum, val) => sum + val,
-                        0
-                      );
-                      const percentage = ((client.amount / totalRevenue) * 100).toFixed(1);
-                      return (
-                        <TableRow key={client.name}>
-                          <TableCell className="font-medium">{client.name}</TableCell>
-                          <TableCell className="text-right font-semibold">
-                            {formatCurrency(client.amount, "USD")}
-                          </TableCell>
-                          <TableCell className="text-right text-muted-foreground">
-                            {percentage}%
+                    {Object.entries(outstandingInvoices).length > 0 ? (
+                      Object.entries(outstandingInvoices).map(([currency, amount]) => (
+                        <TableRow key={currency} className="hover:bg-muted/30">
+                          <TableCell className="pl-6 font-medium">{currency}</TableCell>
+                          <TableCell className="text-right pr-6 text-orange-600 font-bold">
+                            {formatCurrency(amount, currency)}
                           </TableCell>
                         </TableRow>
-                      );
-                    })}
+                      ))
+                    ) : (
+                      <TableRow>
+                        <TableCell colSpan={2} className="text-center py-6 text-muted-foreground">
+                          No outstanding invoices
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
-              ) : (
-                <p className="text-sm text-muted-foreground text-center py-8">
-                  No client data available
-                </p>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Outstanding Invoices */}
-          {Object.keys(outstandingInvoices).length > 0 && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Outstanding Invoices</CardTitle>
-                <CardDescription>Awaiting payment from clients</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {Object.entries(outstandingInvoices).map(([currency, amount]) => (
-                    <div key={currency} className="flex justify-between items-center">
-                      <span className="text-sm font-medium">{currency}</span>
-                      <span className="text-xl font-bold text-orange-600">
-                        {formatCurrency(amount, currency)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
               </CardContent>
             </Card>
-          )}
+          </div>
         </>
       )}
     </WorkspaceShell>

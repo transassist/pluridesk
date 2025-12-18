@@ -42,6 +42,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { toast } from "@/components/ui/use-toast";
+import { StatusDropdown } from "@/components/ui/status-dropdown";
 
 import { invoiceStatuses } from "@/lib/constants/invoices";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -97,14 +98,11 @@ const fetchInvoices = async ({
 
 
 
-const statusVariants: Record<
-  string,
-  "default" | "secondary" | "destructive" | "outline" | "muted"
-> = {
-  draft: "muted",
-  sent: "secondary",
-  paid: "default",
-  overdue: "destructive",
+const INVOICE_STATUS_COLORS: Record<string, string> = {
+  draft: "border-slate-400/50 bg-slate-50 text-slate-800 dark:border-slate-400/40 dark:bg-slate-500/15 dark:text-slate-100",
+  sent: "border-blue-400/50 bg-blue-50 text-blue-800 dark:border-blue-400/40 dark:bg-blue-500/15 dark:text-blue-100",
+  paid: "border-emerald-400/50 bg-emerald-50 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-50",
+  overdue: "border-red-400/50 bg-red-50 text-red-800 dark:border-red-400/40 dark:bg-red-500/15 dark:text-red-50",
 };
 
 export default function InvoicesPage() {
@@ -318,19 +316,21 @@ export default function InvoicesPage() {
         </div>
       }
     >
-      <div className="grid gap-4 md:grid-cols-3">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Total Invoices</CardDescription>
-            <CardTitle className="text-3xl">
+      <div className="grid gap-4 md:grid-cols-4">
+        <Card className="overflow-hidden border-none shadow-md hover-lift">
+          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-blue-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground font-bold">Total Invoices</CardDescription>
+            <CardTitle className="text-3xl font-bold text-gradient">
               {metadata?.total ?? 0}
             </CardTitle>
           </CardHeader>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Outstanding</CardDescription>
-            <CardTitle className="text-2xl text-orange-600">
+        <Card className="overflow-hidden border-none shadow-md hover-lift">
+          <div className="absolute inset-0 bg-gradient-to-br from-orange-500/10 via-transparent to-orange-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground font-bold">Outstanding</CardDescription>
+            <CardTitle className="text-2xl font-bold text-orange-600">
               {summary?.outstanding && Object.keys(summary.outstanding).length > 0 ? (
                 Object.entries(summary.outstanding).map(([currency, amount]) => (
                   <div key={currency}>{formatCurrency(amount, currency)}</div>
@@ -341,10 +341,11 @@ export default function InvoicesPage() {
             </CardTitle>
           </CardHeader>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Collected</CardDescription>
-            <CardTitle className="text-2xl text-green-600">
+        <Card className="overflow-hidden border-none shadow-md hover-lift">
+          <div className="absolute inset-0 bg-gradient-to-br from-green-500/10 via-transparent to-green-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground font-bold">Collected</CardDescription>
+            <CardTitle className="text-2xl font-bold text-green-600">
               {summary?.collected && Object.keys(summary.collected).length > 0 ? (
                 Object.entries(summary.collected).map(([currency, amount]) => (
                   <div key={currency}>{formatCurrency(amount, currency)}</div>
@@ -355,10 +356,11 @@ export default function InvoicesPage() {
             </CardTitle>
           </CardHeader>
         </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardDescription>Draft Volume</CardDescription>
-            <CardTitle className="text-2xl text-muted-foreground">
+        <Card className="overflow-hidden border-none shadow-md hover-lift">
+          <div className="absolute inset-0 bg-gradient-to-br from-slate-500/10 via-transparent to-slate-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground font-bold">Draft Volume</CardDescription>
+            <CardTitle className="text-2xl font-bold text-muted-foreground">
               {summary?.draft && Object.keys(summary.draft).length > 0 ? (
                 Object.entries(summary.draft).map(([currency, amount]) => (
                   <div key={currency}>{formatCurrency(amount, currency)}</div>
@@ -488,10 +490,16 @@ export default function InvoicesPage() {
                           <span className="text-muted-foreground">—</span>
                         )}
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={statusVariants[invoice.status] ?? "secondary"}>
-                          {invoice.status}
-                        </Badge>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <StatusDropdown
+                          currentStatus={invoice.status}
+                          options={invoiceStatuses}
+                          onStatusChange={(newStatus) =>
+                            bulkActionMutation.mutate({ action: "status", status: newStatus, ids: [invoice.id] })
+                          }
+                          statusColorMap={INVOICE_STATUS_COLORS}
+                          isLoading={bulkActionMutation.isPending && bulkActionMutation.variables?.ids?.[0] === invoice.id}
+                        />
                       </TableCell>
                       <TableCell className="text-right font-semibold">
                         {formatCurrency(invoice.total ?? 0, invoice.currency ?? "USD")}

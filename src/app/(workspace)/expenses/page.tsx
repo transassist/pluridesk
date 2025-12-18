@@ -56,6 +56,7 @@ import { ExpensesTableActions } from "@/components/expenses/expenses-table-actio
 import { useToast } from "@/components/ui/use-toast";
 import { EXPENSE_CATEGORIES } from "@/lib/validators/expenses";
 import { formatCurrency, formatDate, cn } from "@/lib/utils";
+import { StatusDropdown } from "@/components/ui/status-dropdown";
 import type { Database } from "@/lib/supabase/types";
 
 type ExpenseRecord = Database["public"]["Tables"]["expenses"]["Row"];
@@ -78,6 +79,17 @@ const categoryColors: Record<string, string> = {
   "Travel": "bg-green-100 text-green-700 border-green-200",
   "Marketing": "bg-pink-100 text-pink-700 border-pink-200",
   "Other": "bg-slate-100 text-slate-700 border-slate-200",
+};
+
+const EXPENSE_STATUS_OPTIONS = [
+  { value: "paid", label: "Paid" },
+  { value: "unpaid", label: "Unpaid" },
+];
+
+const EXPENSE_STATUS_COLORS: Record<string, string> = {
+  paid: "border-emerald-400/50 bg-emerald-50 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-50",
+  unpaid: "border-slate-400/50 bg-slate-50 text-slate-800 dark:border-slate-400/40 dark:bg-slate-500/15 dark:text-slate-100",
+  overdue: "border-red-400/50 bg-red-50 text-red-800 dark:border-red-400/40 dark:bg-red-500/15 dark:text-red-50",
 };
 
 export default function ExpensesPage() {
@@ -311,45 +323,48 @@ export default function ExpensesPage() {
       <div className="grid gap-4 md:grid-cols-3">
         <Card
           className={cn(
-            "cursor-pointer transition-all hover:shadow-md border-l-4",
-            paymentFilter === "unpaid" ? "ring-2 ring-primary border-l-red-500" : "border-l-red-500"
+            "overflow-hidden border-none shadow-md hover-lift cursor-pointer",
+            paymentFilter === "unpaid" && "ring-2 ring-primary"
           )}
           onClick={() => setPaymentFilter(paymentFilter === "unpaid" ? "all" : "unpaid")}
         >
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1">
+          <div className="absolute inset-0 bg-gradient-to-br from-red-500/10 via-transparent to-red-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground font-bold">
               <Clock className="h-3 w-3" />
               Not Paid
             </CardDescription>
-            <CardTitle className="text-2xl text-red-600">
+            <CardTitle className="text-2xl font-bold text-red-600">
               {formatCurrency(unpaidTotal, primaryCurrency)}
             </CardTitle>
           </CardHeader>
         </Card>
         <Card
           className={cn(
-            "cursor-pointer transition-all hover:shadow-md border-l-4",
-            paymentFilter === "overdue" ? "ring-2 ring-primary border-l-amber-500" : "border-l-amber-500"
+            "overflow-hidden border-none shadow-md hover-lift cursor-pointer",
+            paymentFilter === "overdue" && "ring-2 ring-primary"
           )}
           onClick={() => setPaymentFilter(paymentFilter === "overdue" ? "all" : "overdue")}
         >
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-amber-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground font-bold">
               <AlertCircle className="h-3 w-3" />
               Overdue
             </CardDescription>
-            <CardTitle className="text-2xl text-amber-600">
+            <CardTitle className="text-2xl font-bold text-amber-600">
               {formatCurrency(overdueTotal, primaryCurrency)}
             </CardTitle>
           </CardHeader>
         </Card>
-        <Card className="border-l-4 border-l-emerald-500">
-          <CardHeader className="pb-2">
-            <CardDescription className="flex items-center gap-1">
+        <Card className="overflow-hidden border-none shadow-md hover-lift">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/10 via-transparent to-emerald-500/5 pointer-events-none" />
+          <CardHeader className="pb-2 relative">
+            <CardDescription className="flex items-center gap-1 text-xs uppercase tracking-wide text-muted-foreground font-bold">
               <DollarSign className="h-3 w-3" />
               Total (This Page)
             </CardDescription>
-            <CardTitle className="text-2xl text-emerald-600">
+            <CardTitle className="text-2xl font-bold text-emerald-600">
               {formatCurrency(totalAmount, primaryCurrency)}
             </CardTitle>
           </CardHeader>
@@ -617,22 +632,14 @@ export default function ExpensesPage() {
                           onClick={(e) => e.stopPropagation()}
                         />
                       </TableCell>
-                      <TableCell>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8"
-                          onClick={() => togglePaidMutation.mutate({ id: expense.id, paid: !expense.paid })}
-                          title={expense.paid ? "Mark as unpaid" : "Mark as paid"}
-                        >
-                          {expense.paid ? (
-                            <CheckCircle2 className="h-5 w-5 text-green-600" />
-                          ) : isOverdue(expense) ? (
-                            <AlertCircle className="h-5 w-5 text-amber-500" />
-                          ) : (
-                            <Circle className="h-5 w-5 text-red-400" />
-                          )}
-                        </Button>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <StatusDropdown
+                          currentStatus={expense.paid ? "paid" : isOverdue(expense) ? "overdue" : "unpaid"}
+                          options={EXPENSE_STATUS_OPTIONS}
+                          onStatusChange={(v) => togglePaidMutation.mutate({ id: expense.id, paid: v === "paid" })}
+                          statusColorMap={EXPENSE_STATUS_COLORS}
+                          isLoading={togglePaidMutation.isPending && togglePaidMutation.variables?.id === expense.id}
+                        />
                       </TableCell>
                       <TableCell className="font-medium">
                         {expense.date ? formatDate(expense.date) : "—"}

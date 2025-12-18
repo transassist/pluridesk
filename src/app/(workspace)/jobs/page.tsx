@@ -58,7 +58,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { StatusBadge } from "@/components/jobs/status-badge";
+import { StatusDropdown } from "@/components/ui/status-dropdown";
 import { jobStatuses } from "@/lib/constants/jobs";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import type { Database } from "@/lib/supabase/types";
@@ -116,6 +116,20 @@ const JOB_STATUS_LABELS = jobStatuses.reduce<Record<string, string>>((acc, statu
   acc[status.value] = status.label;
   return acc;
 }, {});
+
+const JOB_STATUS_COLORS: Record<string, string> = {
+  created: "border-border bg-muted text-muted-foreground",
+  in_progress:
+    "border-blue-400/50 bg-blue-50 text-blue-800 dark:border-blue-400/40 dark:bg-blue-500/15 dark:text-blue-100",
+  finished:
+    "border-emerald-400/50 bg-emerald-50 text-emerald-800 dark:border-emerald-400/40 dark:bg-emerald-500/15 dark:text-emerald-50",
+  invoiced:
+    "border-purple-400/50 bg-purple-50 text-purple-800 dark:border-purple-400/40 dark:bg-purple-500/15 dark:text-purple-100",
+  on_hold:
+    "border-amber-400/50 bg-amber-50 text-amber-800 dark:border-amber-400/40 dark:bg-amber-500/15 dark:text-amber-100",
+  cancelled:
+    "border-red-400/50 bg-red-50 text-red-800 dark:border-red-400/40 dark:bg-red-500/15 dark:text-red-50",
+};
 
 const formatAmountWithCurrencyCode = (amount: number, currency: string) => {
   const resolvedCurrency = currency || "USD";
@@ -305,6 +319,29 @@ export default function JobsPage() {
     },
     onError: () => {
       toast({ variant: "destructive", title: "Error", description: "Failed to update jobs" });
+    },
+  });
+
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ id, status }: { id: string; status: string }) => {
+      const response = await fetch(`/api/jobs/bulk`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: [id], status }),
+      });
+      if (!response.ok) throw new Error("Failed to update status");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      toast({ title: "Updated", description: "Job status updated successfully" });
+    },
+    onError: (error) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.message ?? "Failed to update status",
+      });
     },
   });
 
@@ -515,13 +552,14 @@ export default function JobsPage() {
         <section>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             {Object.entries(currencyTotals).map(([currency, amount]) => (
-              <Card key={currency}>
-                <CardHeader className="pb-3">
-                  <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground">
+              <Card key={currency} className="overflow-hidden border-none shadow-md hover-lift">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-blue-500/5 pointer-events-none" />
+                <CardHeader className="pb-3 relative">
+                  <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground font-bold">
                     Open value (Page)
                   </CardDescription>
                   <div className="flex items-baseline gap-2">
-                    <CardTitle className="text-3xl font-semibold">
+                    <CardTitle className="text-3xl font-bold text-gradient">
                       {formatAmountWithCurrencyCode(amount, currency)}
                     </CardTitle>
                   </div>
@@ -529,9 +567,10 @@ export default function JobsPage() {
               </Card>
             ))}
             {Object.keys(currencyTotals).length === 0 && (
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground">
+              <Card className="overflow-hidden border-none shadow-md hover-lift">
+                <div className="absolute inset-0 bg-gradient-to-br from-muted/20 to-transparent pointer-events-none" />
+                <CardHeader className="pb-3 relative">
+                  <CardDescription className="text-xs uppercase tracking-wide text-muted-foreground font-bold">
                     Open value (Page)
                   </CardDescription>
                   <CardTitle className="text-3xl text-muted-foreground">
@@ -860,8 +899,16 @@ export default function JobsPage() {
                                 </button>
                               )}
                             </TableCell>
-                            <TableCell>
-                              <StatusBadge status={job.status} />
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <StatusDropdown
+                                currentStatus={job.status}
+                                options={jobStatuses.map(s => ({ value: s.value, label: s.label }))}
+                                onStatusChange={(newStatus) =>
+                                  updateStatusMutation.mutate({ id: job.id, status: newStatus })
+                                }
+                                statusColorMap={JOB_STATUS_COLORS}
+                                isLoading={updateStatusMutation.isPending && updateStatusMutation.variables?.id === job.id}
+                              />
                             </TableCell>
                             <TableCell className="text-sm">
                               {job.due_date ? (
